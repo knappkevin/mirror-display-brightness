@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "id": "io.github.knappkevin.mirror-brightness-display",
-  "name": "Mirror Brightness Display",
+  "id": "io.github.knappkevin.mirror-display-brightness",
+  "name": "Mirror Display Brightness",
   "version": "1.0.0",
   "author": "knappkevin",
   "description": "Display panel with per-monitor brightness targeting — control internal, external, or mirrored displays independently",
@@ -12,7 +12,7 @@
     "barWidget": "Panel.qml"
   },
   "barWidget": {
-    "displayName": "Mirror Brightness Display",
+    "displayName": "Mirror Display Brightness",
     "description": "Display panel with per-monitor brightness targeting",
     "category": "System",
     "allowMultiple": false

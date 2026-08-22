@@ -1,4 +1,4 @@
-# Mirror Brightness Display
+# Mirror Display Brightness
 
 An enhanced display panel for the [Omarchy](https://omarchy.org) bar with
 **per-monitor brightness targeting**. The stock display panel can only drive
@@ -28,7 +28,7 @@ over DDC/CI, or either side of a mirrored pair.
 ## Install
 
 ```sh
-omarchy plugin add https://github.com/knappkevin/mirror-brightness-display.git --enable
+omarchy plugin add https://github.com/knappkevin/mirror-display-brightness.git --enable
 ```
 
 ## Usage

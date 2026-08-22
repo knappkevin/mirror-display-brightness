@@ -8,8 +8,8 @@ import "Model.js" as Model
 
 Panel {
   id: root
-  moduleName: "io.github.knappkevin.mirror-brightness-display"
-  ipcTarget: "io.github.knappkevin.mirror-brightness-display"
+  moduleName: "io.github.knappkevin.mirror-display-brightness"
+  ipcTarget: "io.github.knappkevin.mirror-display-brightness"
   manageIpc: false
 
   // manageIpc: false so this panel can own the single IpcHandler the target
@@ -238,7 +238,7 @@ Panel {
   }
 
   IpcHandler {
-    target: "io.github.knappkevin.mirror-brightness-display"
+    target: "io.github.knappkevin.mirror-display-brightness"
 
     function brightness(percent: string): string { return root.brightnessIpc(percent) }
     function state(): string { return root.stateIpc() }
