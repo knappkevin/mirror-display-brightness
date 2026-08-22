@@ -8,8 +8,8 @@ import "Model.js" as Model
 
 Panel {
   id: root
-  moduleName: "omarchy.monitor"
-  ipcTarget: "omarchy.monitor"
+  moduleName: "io.github.knappkevin.mirror-brightness-display"
+  ipcTarget: "io.github.knappkevin.mirror-brightness-display"
   manageIpc: false
 
   // manageIpc: false so this panel can own the single IpcHandler the target
@@ -26,6 +26,16 @@ Panel {
   property string monitorScale: ""
   property var displays: []
   property int enabledDisplayCount: 0
+  property string brightnessTarget: ""
+
+  readonly property var enabledDisplays: {
+    var list = []
+    for (var i = 0; i < displays.length; i++) {
+      var d = displays[i]
+      if (d && d.enabled) list.push(String(d.name))
+    }
+    return list
+  }
 
   // Carry sub-notch touchpad deltas between wheel events.
   property real wheelAccumulator: 0
@@ -34,6 +44,9 @@ Panel {
   //   "brightness" - single slider row, selectedIndex = -1 sentinel
   //                  (mirrors Audio's slider rows). Only present if a
   //                  controllable backlight was detected.
+  //   "target"     - display pills choosing which monitor the brightness
+  //                  slider drives; horizontal row like scale. Only present
+  //                  with more than one enabled display.
   //   "scale"      - 6 Button scale presets; treated as a single
   //                  horizontal row from j/k's perspective. h/l moves
   //                  between presets, identical to bluetooth's header.
@@ -75,6 +88,7 @@ Panel {
   readonly property var visibleSections: {
     var list = []
     if (brightnessAvailable) list.push("brightness")
+    if (brightnessAvailable && enabledDisplayCount > 1) list.push("target")
     list.push("textsize")
     list.push("scale")
     if (displays.length > 1) list.push("monitors")
@@ -83,6 +97,7 @@ Panel {
 
   function sectionCount(section) {
     if (section === "brightness") return 0  // only the slider sentinel at -1
+    if (section === "target") return enabledDisplays.length
     if (section === "textsize") return 0    // slider sentinel at -1, like brightness
     if (section === "scale") return scaleValues.length
     if (section === "monitors") return displays.length
@@ -90,8 +105,8 @@ Panel {
   }
 
   function sectionIsSingleRow(section) {
-    // brightness and text size are lone sliders; scale presets sit horizontally.
-    return section === "brightness" || section === "textsize" || section === "scale"
+    // brightness and text size are lone sliders; target/scale presets sit horizontally.
+    return section === "brightness" || section === "textsize" || section === "target" || section === "scale"
   }
 
   function sectionFirstIndex(section) {
@@ -129,14 +144,14 @@ Panel {
     }
   }
 
-  // h/l: in scale section, walks the preset row; everywhere else, no-op
-  // because adjustBrightness handles horizontal motion on the brightness
-  // slider.
+  // h/l: in the target or scale rows, walks the pill row; everywhere else,
+  // no-op because adjustBrightness handles horizontal motion on sliders.
   function moveCursorH(delta) {
-    if (focusSection !== "scale") return
+    if (focusSection !== "scale" && focusSection !== "target") return
+    var count = focusSection === "scale" ? scaleValues.length : enabledDisplays.length
     var next = selectedIndex + delta
     if (next < 0) next = 0
-    if (next > scaleValues.length - 1) next = scaleValues.length - 1
+    if (next > count - 1) next = count - 1
     selectedIndex = next
   }
 
@@ -147,6 +162,10 @@ Panel {
   }
 
   function activateCursor() {
+    if (focusSection === "target" && selectedIndex >= 0 && selectedIndex < enabledDisplays.length) {
+      root.brightnessTarget = enabledDisplays[selectedIndex]
+      return
+    }
     if (focusSection === "scale" && selectedIndex >= 0 && selectedIndex < scaleValues.length) {
       setScale(scaleValues[selectedIndex])
       return
@@ -212,13 +231,14 @@ Panel {
       brightness: root.brightnessPercent,
       brightnessAvailable: root.brightnessAvailable,
       focusedMonitor: root.focusedMonitor,
+      brightnessTarget: root.brightnessTarget,
       scale: root.monitorScale,
       displays: root.displays
     })
   }
 
   IpcHandler {
-    target: "omarchy.monitor"
+    target: "io.github.knappkevin.mirror-brightness-display"
 
     function brightness(percent: string): string { return root.brightnessIpc(percent) }
     function state(): string { return root.stateIpc() }
@@ -231,6 +251,7 @@ Panel {
 
   function refresh() {
     if (!stateProc.running) stateProc.running = true
+    readTargetBrightness()
   }
 
   function setBrightness(value) {
@@ -244,7 +265,8 @@ Panel {
     }
 
     root.brightnessSetQueued = false
-    setBrightnessProc.command = ["omarchy-brightness-display", "--no-osd", "--monitor", root.focusedMonitor, percent + "%"]
+    var monitor = root.brightnessTarget !== "" ? root.brightnessTarget : root.focusedMonitor
+    setBrightnessProc.command = ["omarchy-brightness-display", "--no-osd", "--monitor", monitor, percent + "%"]
     setBrightnessProc.running = true
   }
 
@@ -300,7 +322,10 @@ Panel {
     if (!name) return
     if (enabled && root.enabledDisplayCount <= 1) return
 
-    actionProc.command = ["hyprctl", "keyword", "monitor", name + (enabled ? ",disable" : ",preferred,auto,auto")]
+    var expr = enabled
+      ? 'hl.monitor({ output = "' + name + '", disabled = true })'
+      : 'hl.monitor({ output = "' + name + '", mode = "preferred", position = "auto", scale = 1, disabled = false })'
+    actionProc.command = ["hyprctl", "eval", expr]
     if (!actionProc.running) actionProc.running = true
   }
 
@@ -390,9 +415,7 @@ Panel {
       waitForEnd: true
       onStreamFinished: {
         var lines = String(text || "").split("\n")
-        var brightness = String(lines[0] || "").trim()
-        root.brightnessAvailable = brightness !== "unavailable" && brightness !== ""
-        root.brightnessPercent = root.brightnessAvailable ? Math.max(0, Math.min(100, parseInt(brightness, 10))) : 0
+        var seed = String(lines[0] || "").trim()
         root.internalMonitor = String(lines[1] || "").trim()
         root.externalMonitor = String(lines[2] || "").trim()
         root.internalEnabled = String(lines[3] || "").trim() !== ""
@@ -400,9 +423,50 @@ Panel {
         root.focusedMonitor = String(lines[5] || "").trim()
         root.monitorScale = root.normalizeScale(String(lines[6] || "").trim())
         root.updateDisplays(String(lines[7] || "[]").trim())
+
+        var valid = false
+        for (var i = 0; i < root.displays.length; i++) {
+          var d = root.displays[i]
+          if (d && d.enabled && d.name === root.brightnessTarget) { valid = true; break }
+        }
+        if (!valid) {
+          root.brightnessTarget = root.focusedMonitor !== ""
+            ? root.focusedMonitor
+            : (root.enabledDisplays.length > 0 ? root.enabledDisplays[0] : "")
+        } else if (
+          root.brightnessTarget === root.focusedMonitor
+          && seed !== "unavailable" && seed !== ""
+          && !brightnessSlider.dragging && !brightnessDebounce.running && !setBrightnessProc.running
+        ) {
+          root.brightnessPercent = Math.max(0, Math.min(100, parseInt(seed, 10)))
+        }
       }
     }
   }
+
+  Process {
+    id: targetBrightnessProc
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        var value = String(text || "").trim()
+        var pct = parseInt(value, 10)
+        var available = value !== "" && isFinite(pct)
+        root.brightnessAvailable = available
+        if (available && !brightnessSlider.dragging && !brightnessDebounce.running && !setBrightnessProc.running)
+          root.brightnessPercent = Math.max(0, Math.min(100, pct))
+      }
+    }
+  }
+
+  function readTargetBrightness() {
+    if (root.brightnessTarget === "") return
+    if (targetBrightnessProc.running) return
+    targetBrightnessProc.command = ["omarchy-brightness-display", "--monitor", root.brightnessTarget]
+    targetBrightnessProc.running = true
+  }
+
+  onBrightnessTargetChanged: readTargetBrightness()
 
   Timer {
     id: brightnessDebounce
@@ -593,7 +657,9 @@ Panel {
 
               PanelSectionHeader {
                 id: brightnessHeader
-                text: "BRIGHTNESS"
+                text: root.enabledDisplayCount > 1 && root.brightnessTarget !== ""
+                  ? "BRIGHTNESS · " + root.brightnessTarget
+                  : "BRIGHTNESS"
                 foreground: root.bar.foreground
                 fontFamily: root.bar.fontFamily
                 anchors.left: parent.left
@@ -646,6 +712,32 @@ Panel {
                   root.focusSection = "brightness"
                   root.selectedIndex = -1
                 }
+              }
+            }
+          }
+
+          // ---------- Brightness target ----------
+          Grid {
+            id: targetRow
+            visible: root.brightnessAvailable && root.enabledDisplayCount > 1
+            width: parent.width
+            columns: root.enabledDisplays.length
+            spacing: Style.spacing.xs
+
+            readonly property real cellWidth: root.enabledDisplays.length > 0
+              ? (width - spacing * (columns - 1)) / columns
+              : 0
+
+            Repeater {
+              model: root.enabledDisplays
+
+              TargetPill {
+                required property string modelData
+                required property int index
+
+                targetName: modelData
+                targetIndex: index
+                width: targetRow.cellWidth
               }
             }
           }
@@ -822,6 +914,31 @@ Panel {
           }
         }
       }
+    }
+  }
+
+  component TargetPill: Button {
+    id: targetPill
+    required property string targetName
+    required property int targetIndex
+
+    text: targetName
+    fontSize: Style.font.caption
+    foreground: root.bar.foreground
+    fontFamily: root.bar.fontFamily
+    horizontalPadding: Style.spacing.sm
+    verticalPadding: Style.spacing.controlPaddingY
+    bordered: true
+
+    active: root.brightnessTarget === targetName
+    hasCursor: root.cursorActive && root.focusSection === "target" && root.selectedIndex === targetIndex
+
+    onClicked: root.brightnessTarget = targetName
+    onHovered: function(isHovered) {
+      if (!isHovered || root.reflowingText) return
+      root.cursorActive = true
+      root.focusSection = "target"
+      root.selectedIndex = targetPill.targetIndex
     }
   }
 

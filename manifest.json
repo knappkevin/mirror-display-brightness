@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
-  "id": "omarchy.monitor",
-  "name": "Display",
+  "id": "io.github.knappkevin.mirror-brightness-display",
+  "name": "Mirror Brightness Display",
   "version": "1.0.0",
-  "author": "Omarchy",
-  "description": "Brightness slider and laptop display controls",
+  "author": "knappkevin",
+  "description": "Display panel with per-monitor brightness targeting — control internal, external, or mirrored displays independently",
   "kinds": [
     "bar-widget"
   ],
@@ -12,8 +12,8 @@
     "barWidget": "Panel.qml"
   },
   "barWidget": {
-    "displayName": "Display",
-    "description": "Brightness slider and laptop display controls",
+    "displayName": "Mirror Brightness Display",
+    "description": "Display panel with per-monitor brightness targeting",
     "category": "System",
     "allowMultiple": false
   }
